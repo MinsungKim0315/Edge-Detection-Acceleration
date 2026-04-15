@@ -118,9 +118,9 @@ ImageU8 f32_to_u8_normalized(const ImageF32& image) {
         return output;
     }
 
-    const auto [min_it, max_it] = std::minmax_element(image.pixels.begin(), image.pixels.end());
-    const float min_value = *min_it;
-    const float max_value = *max_it;
+    const auto minmax = std::minmax_element(image.pixels.begin(), image.pixels.end());
+    const float min_value = *minmax.first;
+    const float max_value = *minmax.second;
 
     if (std::abs(max_value - min_value) < 1e-6f) {
         std::fill(output.pixels.begin(), output.pixels.end(), 0);

@@ -21,11 +21,12 @@ OUTPUT_PATH=$(shell pwd)/output
 # DUT_SRC=$(SRC_PATH)/edge_detector.cpp
 # TEST_SRC=$(SRC_PATH)/edge_detector_test.cpp
 # ALL_SRC=$(DUT_SRC) $(TEST_SRC) $(SRC_PATH)/edge_detector.h
-SRCS=$(wildcard src/*.cpp)
+SW_SRCS=$(SRC_PATH)/main.cpp $(SRC_PATH)/image_io.cpp $(SRC_PATH)/gaussian.cpp $(SRC_PATH)/sobel.cpp $(SRC_PATH)/nms.cpp $(SRC_PATH)/threshold.cpp $(SRC_PATH)/hysteresis.cpp
+HLS_SRCS=$(SRC_PATH)/dut.cpp
 INCLUDES=$(wildcard include/*.hpp)
 # DATA_PATH=$(shell pwd)/data
 KRIA_DIR=$(shell pwd)/kria_dir
-# KRIA_SRC=$(shell pwd)/src/kria
+KRIA_SRC=$(shell pwd)/src/kria
 RESULTS_DIR=$(shell pwd)/result
 
 # Extract Vivado HLS include path
@@ -64,6 +65,7 @@ deploy: ${BUILD_PATH}/bitstream.bit
 	cp ${BUILD_PATH}/bitstream.bit ${KRIA_DIR}/
 	cp -r ${SRC_PATH}/* ${KRIA_DIR}/
 	cp -r ${KRIA_SRC}/* ${KRIA_DIR}/
+	cp -r ${INCLUDE_PATH}/* ${KRIA_DIR}/
 
 clean:
 	rm -rf ${BUILD_PATH}
@@ -71,7 +73,7 @@ clean:
 
 # === Internal targets ===
 
-${BUILD_PATH}/edge_detector: ${SRCS}
+${BUILD_PATH}/edge_detector: ${SW_SRCS}
 	mkdir -p ${BUILD_PATH}
 	g++ ${CFLAGS} $^ -o $@ -lrt
 
@@ -87,12 +89,12 @@ ${RESULTS_DIR}/edge_detector_csim.txt: ${BUILD_PATH}/edge_detector
 	@mkdir -p ${RESULTS_DIR} $(dir $(CSIM_OUTPUT))
 	$< $(CSIM_INPUT) $(CSIM_OUTPUT) $(CSIM_ARGS) 2>&1 | tee $@
 
-${HW_DUT_PATH}/dut.v: ${SRCS}
+${HW_DUT_PATH}/dut.v: ${HLS_SRCS} ${INCLUDES}
 	@echo "================================================================="
 	@echo "Synthesizing edge_detector with $(TCL_NAME)..."
 	@echo "================================================================="
 	mkdir -p ${HW_DUT_PATH}
-	SRC_PATH=${SRC_PATH} TEST_PATH=${SRC_PATH} SKIP_CSIM=1 SKIP_COSIM=1 $(XIL_HLS) artifacts/${TCL_NAME}
+	SRC_PATH=${SRC_PATH} INPUT_PATH=${INPUT_PATH} PROJ_PATH=${ROOT_DIR} INCLUDE_PATH=${INCLUDE_PATH} SKIP_CSIM=1 SKIP_COSIM=1 $(XIL_HLS) artifacts/${TCL_NAME}
 	cp edge_detector.prj/solution1/impl/ip/hdl/verilog/* ${HW_DUT_PATH}/
 
 
