@@ -95,6 +95,7 @@ ${HW_DUT_PATH}/dut.v: ${HLS_SRCS} ${INCLUDES}
 	@echo "================================================================="
 	mkdir -p ${HW_DUT_PATH}
 	SRC_PATH=${SRC_PATH} INPUT_PATH=${INPUT_PATH} PROJ_PATH=${ROOT_DIR} INCLUDE_PATH=${INCLUDE_PATH} SKIP_CSIM=1 SKIP_COSIM=1 $(XIL_HLS) artifacts/${TCL_NAME}
+	rm -f ${HW_DUT_PATH}/*
 	cp edge_detector.prj/solution1/impl/ip/hdl/verilog/* ${HW_DUT_PATH}/
 
 

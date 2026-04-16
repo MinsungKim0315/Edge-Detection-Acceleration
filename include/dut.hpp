@@ -6,8 +6,8 @@
 #include <ap_int.h>
 #include <hls_stream.h>
 
-constexpr int kMaxImageWidth = 512;
-constexpr int kMaxImageHeight = 512;
+constexpr int kMaxImageWidth = 321;
+constexpr int kMaxImageHeight = 481;
 constexpr int kGaussianKernelSize = 5;
 constexpr std::uint32_t kDutProtocolVersion = 1;
 

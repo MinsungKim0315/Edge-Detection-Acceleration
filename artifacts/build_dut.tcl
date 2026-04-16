@@ -34,12 +34,13 @@ if {[info exists ::env(SKIP_COSIM)]} {
 }
 
 set cflags "-std=c++14 -I$include_path"
+set tb_cflags [concat $cflags [format {-DINPUT_DIR=\\"%s\\"} $input_path]]
 
 open_project -reset "$proj_path/edge_detector.prj"
 set_top dut
 
 add_files -cflags $cflags $src_path/dut.cpp
-add_files -cflags $cflags -tb $src_path/dut_tb.cpp
+add_files -cflags $tb_cflags -tb $src_path/dut_tb.cpp
 add_files -cflags $cflags -tb $src_path/image_io.cpp
 add_files -cflags $cflags -tb $src_path/gaussian.cpp
 add_files -cflags $cflags -tb $src_path/sobel.cpp

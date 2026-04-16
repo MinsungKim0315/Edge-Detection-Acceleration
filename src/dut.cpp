@@ -3,22 +3,23 @@
 #include <cmath>
 #include <cstdint>
 
-
 namespace {
 
 using Pixel = std::uint8_t;
 using Direction = std::uint8_t;
+using BlurPixel = std::uint16_t;
+using Magnitude = float;
 
 constexpr Pixel kNoEdgeLocal = 0;
 constexpr Pixel kWeakEdgeLocal = 75;
 constexpr Pixel kStrongEdgeLocal = 255;
-
-constexpr float kGaussianKernel1D[kGaussianKernelSize] = {
-    0.11020945604615712f,
-    0.23691201406344845f,
-    0.30575705978078893f,
-    0.23691201406344845f,
-    0.11020945604615712f,
+constexpr int kBlurScale = 256;
+constexpr float kGaussianKernel2D[kGaussianKernelSize][kGaussianKernelSize] = {
+    {0.012146124730090273f, 0.026108117663175317f, 0.03369625012825844f, 0.026108117663175317f, 0.012146124730090273f},
+    {0.026108117663175317f, 0.056127299040522325f, 0.07244443355700187f, 0.056127299040522325f, 0.026108117663175317f},
+    {0.03369625012825844f, 0.07244443355700187f, 0.09348737760471192f, 0.07244443355700187f, 0.03369625012825844f},
+    {0.026108117663175317f, 0.056127299040522325f, 0.07244443355700187f, 0.056127299040522325f, 0.026108117663175317f},
+    {0.012146124730090273f, 0.026108117663175317f, 0.03369625012825844f, 0.026108117663175317f, 0.012146124730090273f},
 };
 
 constexpr int kSobelX[3][3] = {
@@ -82,140 +83,151 @@ read_rows:
     }
 }
 
-void gaussian_blur_hw(const Pixel input[kMaxImageHeight][kMaxImageWidth], float temp[kMaxImageHeight][kMaxImageWidth], float output[kMaxImageHeight][kMaxImageWidth], int width, int height) {
-blur_h_rows:
+void gaussian_blur_hw(const Pixel input[kMaxImageHeight][kMaxImageWidth], BlurPixel blurred[kMaxImageHeight][kMaxImageWidth], int width, int height) {
+blur_rows:
     for (int y = 0; y < height; ++y) {
-    blur_h_cols:
+    blur_cols:
         for (int x = 0; x < width; ++x) {
 #pragma HLS PIPELINE II=1
             float sum = 0.0f;
-        blur_h_k:
-            for (int k = 0; k < kGaussianKernelSize; ++k) {
+        blur_ky:
+            for (int ky = 0; ky < kGaussianKernelSize; ++ky) {
+            blur_kx:
+                for (int kx = 0; kx < kGaussianKernelSize; ++kx) {
 #pragma HLS UNROLL
-                const int sx = clamp_int(x + k - 2, 0, width - 1);
-                sum += static_cast<float>(input[y][sx]) * kGaussianKernel1D[k];
-            }
-            temp[y][x] = sum;
-        }
-    }
-
-blur_v_rows:
-    for (int y = 0; y < height; ++y) {
-    blur_v_cols:
-        for (int x = 0; x < width; ++x) {
-#pragma HLS PIPELINE II=1
-            float sum = 0.0f;
-        blur_v_k:
-            for (int k = 0; k < kGaussianKernelSize; ++k) {
-#pragma HLS UNROLL
-                const int sy = clamp_int(y + k - 2, 0, height - 1);
-                sum += temp[sy][x] * kGaussianKernel1D[k];
-            }
-            output[y][x] = sum;
-        }
-    }
-}
-
-void sobel_hw(const float input[kMaxImageHeight][kMaxImageWidth], float magnitude[kMaxImageHeight][kMaxImageWidth], Direction direction[kMaxImageHeight][kMaxImageWidth], int width, int height) {
-sobel_rows:
-    for (int y = 0; y < height; ++y) {
-    sobel_cols:
-        for (int x = 0; x < width; ++x) {
-#pragma HLS PIPELINE II=1
-            float gx = 0.0f;
-            float gy = 0.0f;
-        sobel_ky:
-            for (int ky = 0; ky < 3; ++ky) {
-            sobel_kx:
-                for (int kx = 0; kx < 3; ++kx) {
-#pragma HLS UNROLL
-                    const int sy = clamp_int(y + ky - 1, 0, height - 1);
-                    const int sx = clamp_int(x + kx - 1, 0, width - 1);
-                    const float sample = input[sy][sx];
-                    gx += sample * static_cast<float>(kSobelX[ky][kx]);
-                    gy += sample * static_cast<float>(kSobelY[ky][kx]);
+                    const int sy = clamp_int(y + ky - 2, 0, height - 1);
+                    const int sx = clamp_int(x + kx - 2, 0, width - 1);
+                    sum += static_cast<float>(input[sy][sx]) * kGaussianKernel2D[ky][kx];
                 }
             }
-            magnitude[y][x] = std::sqrt((gx * gx) + (gy * gy));
-            direction[y][x] = quantize_direction(gy, gx);
+            const float scaled = sum * static_cast<float>(kBlurScale);
+            blurred[y][x] = static_cast<BlurPixel>(scaled + 0.5f);
         }
     }
 }
 
-void nms_hw(const float magnitude[kMaxImageHeight][kMaxImageWidth], const Direction direction[kMaxImageHeight][kMaxImageWidth], float output[kMaxImageHeight][kMaxImageWidth], int width, int height) {
-clear_rows:
-    for (int y = 0; y < height; ++y) {
-    clear_cols:
-        for (int x = 0; x < width; ++x) {
+void sobel_row_hw(const BlurPixel blurred[kMaxImageHeight][kMaxImageWidth], int width, int height, int y, Magnitude magnitude_row[kMaxImageWidth], Direction direction_row[kMaxImageWidth]) {
+sobel_row_cols:
+    for (int x = 0; x < width; ++x) {
 #pragma HLS PIPELINE II=1
-            output[y][x] = 0.0f;
-        }
-    }
-
-nms_rows:
-    for (int y = 1; y < height - 1; ++y) {
-    nms_cols:
-        for (int x = 1; x < width - 1; ++x) {
-#pragma HLS PIPELINE II=1
-            const float center = magnitude[y][x];
-            float neighbor_a = 0.0f;
-            float neighbor_b = 0.0f;
-
-            switch (direction[y][x]) {
-                case 0:
-                    neighbor_a = magnitude[y][x - 1];
-                    neighbor_b = magnitude[y][x + 1];
-                    break;
-                case 45:
-                    neighbor_a = magnitude[y + 1][x - 1];
-                    neighbor_b = magnitude[y - 1][x + 1];
-                    break;
-                case 90:
-                    neighbor_a = magnitude[y - 1][x];
-                    neighbor_b = magnitude[y + 1][x];
-                    break;
-                default:
-                    neighbor_a = magnitude[y - 1][x - 1];
-                    neighbor_b = magnitude[y + 1][x + 1];
-                    break;
-            }
-
-            if (center >= neighbor_a && center >= neighbor_b) {
-                output[y][x] = center;
+        float gx = 0.0f;
+        float gy = 0.0f;
+    sobel_ky:
+        for (int ky = 0; ky < 3; ++ky) {
+        sobel_kx:
+            for (int kx = 0; kx < 3; ++kx) {
+#pragma HLS UNROLL
+                const int sy = clamp_int(y + ky - 1, 0, height - 1);
+                const int sx = clamp_int(x + kx - 1, 0, width - 1);
+                const float sample = static_cast<float>(blurred[sy][sx]) / static_cast<float>(kBlurScale);
+                gx += sample * static_cast<float>(kSobelX[ky][kx]);
+                gy += sample * static_cast<float>(kSobelY[ky][kx]);
             }
         }
+        magnitude_row[x] = std::sqrt((gx * gx) + (gy * gy));
+        direction_row[x] = quantize_direction(gy, gx);
     }
 }
 
-void threshold_hw(const float input[kMaxImageHeight][kMaxImageWidth], Pixel output[kMaxImageHeight][kMaxImageWidth], int width, int height, float low_threshold, float high_threshold) {
-thresh_rows:
-    for (int y = 0; y < height; ++y) {
-    thresh_cols:
-        for (int x = 0; x < width; ++x) {
-#pragma HLS PIPELINE II=1
-            const float value = input[y][x];
-            Pixel pixel = kNoEdgeLocal;
-            if (value >= high_threshold) {
-                pixel = kStrongEdgeLocal;
-            } else if (value >= low_threshold) {
-                pixel = kWeakEdgeLocal;
-            }
-            output[y][x] = pixel;
-        }
+Pixel nms_threshold_pixel(const Magnitude prev_mag[kMaxImageWidth],
+                         const Magnitude curr_mag[kMaxImageWidth],
+                         const Magnitude next_mag[kMaxImageWidth],
+                         const Direction curr_dir[kMaxImageWidth],
+                         int x,
+                         float low_threshold,
+                         float high_threshold) {
+    const float center = curr_mag[x];
+    float neighbor_a = 0.0f;
+    float neighbor_b = 0.0f;
+
+    switch (curr_dir[x]) {
+        case 0:
+            neighbor_a = curr_mag[x - 1];
+            neighbor_b = curr_mag[x + 1];
+            break;
+        case 45:
+            neighbor_a = next_mag[x - 1];
+            neighbor_b = prev_mag[x + 1];
+            break;
+        case 90:
+            neighbor_a = prev_mag[x];
+            neighbor_b = next_mag[x];
+            break;
+        default:
+            neighbor_a = prev_mag[x - 1];
+            neighbor_b = next_mag[x + 1];
+            break;
     }
+
+    float suppressed = 0.0f;
+    if (center >= neighbor_a && center >= neighbor_b) {
+        suppressed = center;
+    }
+
+    if (suppressed >= high_threshold) {
+        return kStrongEdgeLocal;
+    }
+    if (suppressed >= low_threshold) {
+        return kWeakEdgeLocal;
+    }
+    return kNoEdgeLocal;
 }
 
-void write_image(DutStream& strmOut, const Pixel image[kMaxImageHeight][kMaxImageWidth], int width, int height) {
+void write_thresholded_stream(DutStream& strmOut,
+                              const BlurPixel blurred[kMaxImageHeight][kMaxImageWidth],
+                              int width,
+                              int height,
+                              float low_threshold,
+                              float high_threshold) {
+    static Magnitude mag_rows[3][kMaxImageWidth];
+    static Direction dir_rows[3][kMaxImageWidth];
+
     strmOut.write(static_cast<DutWord>(kDutProtocolVersion));
     strmOut.write(static_cast<DutWord>(width));
     strmOut.write(static_cast<DutWord>(height));
-write_rows:
-    for (int y = 0; y < height; ++y) {
-    write_cols:
+
+    if (height <= 0 || width <= 0) {
+        return;
+    }
+
+    sobel_row_hw(blurred, width, height, 0, mag_rows[0], dir_rows[0]);
+    if (height > 1) {
+        sobel_row_hw(blurred, width, height, 1, mag_rows[1], dir_rows[1]);
+    } else {
+copy_row0_mag:
         for (int x = 0; x < width; ++x) {
 #pragma HLS PIPELINE II=1
-            strmOut.write(static_cast<DutWord>(image[y][x]));
+            mag_rows[1][x] = mag_rows[0][x];
+            dir_rows[1][x] = dir_rows[0][x];
         }
+    }
+
+write_top_row:
+    for (int x = 0; x < width; ++x) {
+#pragma HLS PIPELINE II=1
+        strmOut.write(static_cast<DutWord>(kNoEdgeLocal));
+    }
+
+process_rows:
+    for (int y = 1; y < height - 1; ++y) {
+        const int next_slot = (y + 1) % 3;
+        sobel_row_hw(blurred, width, height, y + 1, mag_rows[next_slot], dir_rows[next_slot]);
+
+    process_cols:
+        for (int x = 0; x < width; ++x) {
+#pragma HLS PIPELINE II=1
+            Pixel pixel = kNoEdgeLocal;
+            if (x > 0 && x < width - 1) {
+                pixel = nms_threshold_pixel(mag_rows[(y - 1) % 3], mag_rows[y % 3], mag_rows[(y + 1) % 3], dir_rows[y % 3], x, low_threshold, high_threshold);
+            }
+            strmOut.write(static_cast<DutWord>(pixel));
+        }
+    }
+
+write_bottom_row:
+    for (int x = 0; x < width; ++x) {
+#pragma HLS PIPELINE II=1
+        strmOut.write(static_cast<DutWord>(kNoEdgeLocal));
     }
 }
 
@@ -227,12 +239,7 @@ void dut(DutStream& strmIn, DutStream& strmOut) {
 #pragma HLS INTERFACE axis port=strmOut
 
     static Pixel input[kMaxImageHeight][kMaxImageWidth];
-    static float gaussian_temp[kMaxImageHeight][kMaxImageWidth];
-    static float blurred[kMaxImageHeight][kMaxImageWidth];
-    static float magnitude[kMaxImageHeight][kMaxImageWidth];
-    static Direction direction[kMaxImageHeight][kMaxImageWidth];
-    static float suppressed[kMaxImageHeight][kMaxImageWidth];
-    static Pixel thresholded[kMaxImageHeight][kMaxImageWidth];
+    static BlurPixel blurred[kMaxImageHeight][kMaxImageWidth];
 
     int width = 0;
     int height = 0;
@@ -248,9 +255,6 @@ void dut(DutStream& strmIn, DutStream& strmOut) {
     }
 
     read_image(strmIn, input, width, height);
-    gaussian_blur_hw(input, gaussian_temp, blurred, width, height);
-    sobel_hw(blurred, magnitude, direction, width, height);
-    nms_hw(magnitude, direction, suppressed, width, height);
-    threshold_hw(suppressed, thresholded, width, height, low_threshold, high_threshold);
-    write_image(strmOut, thresholded, width, height);
+    gaussian_blur_hw(input, blurred, width, height);
+    write_thresholded_stream(strmOut, blurred, width, height, low_threshold, high_threshold);
 }

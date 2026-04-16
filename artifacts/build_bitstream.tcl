@@ -4,10 +4,13 @@
 # @author: Francesco Ciraolo
 #*********************************************************************************************
 
-# List all files in build/hw_dut/ directory
-set hw_dut_files [glob -nocomplain build/hw_dut/*.v]
+# List all staged RTL/include files and generated HLS subcore IPs
+set hw_dut_v_files [glob -nocomplain build/hw_dut/*.v]
+set hw_dut_vh_files [glob -nocomplain build/hw_dut/*.vh]
+set hw_dut_files [concat $hw_dut_v_files $hw_dut_vh_files]
+set hls_subcore_xci_files [glob -nocomplain edge_detector.prj/solution1/impl/ip/hdl/ip/*/*.xci]
 
-# Check if the list is empty
+# Check if the RTL list is empty
 if {[llength $hw_dut_files] == 0} {
     puts "Error: No files found in build/hw_dut/ directory. Please run build_dut.tcl first to generate the HLS output."
     exit 1
@@ -50,8 +53,11 @@ set_property -name "use_inline_hdl_ip" -value "1" -objects $obj
 # Set 'sources_1' fileset object
 set obj [get_filesets sources_1]
 add_files -norecurse -fileset $obj $hw_dut_files
+if {[llength $hls_subcore_xci_files] > 0} {
+    add_files -norecurse -fileset $obj $hls_subcore_xci_files
+}
 add_files -norecurse -fileset $obj artifacts/CifraOpenBus.v
-puts "Added files to sources_1 fileset: $hw_dut_files and artifacts/CifraOpenBus.v"
+puts "Added files to sources_1 fileset: $hw_dut_files $hls_subcore_xci_files and artifacts/CifraOpenBus.v"
 
 # Create block design
 create_bd_design "design_1"

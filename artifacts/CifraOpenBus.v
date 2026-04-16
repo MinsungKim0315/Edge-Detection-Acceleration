@@ -304,32 +304,30 @@ module DutWrapper (
   wire                hlsArea_dut_ap_done;
   wire                hlsArea_dut_ap_idle;
   wire                hlsArea_dut_ap_ready;
-  wire                hlsArea_dut_strm_in_read;
-  wire                hlsArea_dut_strm_out_write;
-  wire       [31:0]   hlsArea_dut_strm_out_din;
-  wire                _zz_ap_rst;
+  wire                hlsArea_dut_strmIn_TREADY;
+  wire                hlsArea_dut_strmOut_TVALID;
+  wire       [31:0]   hlsArea_dut_strmOut_TDATA;
 
   dut hlsArea_dut (
-    .ap_clk          (clk                           ), //i
-    .ap_rst          (_zz_ap_rst                    ), //i
-    .ap_start        (io_ap_start                   ), //i
-    .ap_done         (hlsArea_dut_ap_done           ), //o
-    .ap_idle         (hlsArea_dut_ap_idle           ), //o
-    .ap_ready        (hlsArea_dut_ap_ready          ), //o
-    .strm_in_empty_n (io_strmIn_valid               ), //i
-    .strm_in_read    (hlsArea_dut_strm_in_read      ), //o
-    .strm_in_dout    (io_strmIn_payload[31:0]       ), //i
-    .strm_out_write  (hlsArea_dut_strm_out_write    ), //o
-    .strm_out_full_n (io_strmOut_ready              ), //i
-    .strm_out_din    (hlsArea_dut_strm_out_din[31:0])  //o
+    .ap_clk        (clk                           ), //i
+    .ap_rst_n      (resetn                        ), //i
+    .ap_start      (io_ap_start                   ), //i
+    .ap_done       (hlsArea_dut_ap_done           ), //o
+    .ap_idle       (hlsArea_dut_ap_idle           ), //o
+    .ap_ready      (hlsArea_dut_ap_ready          ), //o
+    .strmIn_TDATA  (io_strmIn_payload[31:0]       ), //i
+    .strmIn_TVALID (io_strmIn_valid               ), //i
+    .strmIn_TREADY (hlsArea_dut_strmIn_TREADY     ), //o
+    .strmOut_TDATA (hlsArea_dut_strmOut_TDATA[31:0]), //o
+    .strmOut_TVALID(hlsArea_dut_strmOut_TVALID    ), //o
+    .strmOut_TREADY(io_strmOut_ready              )  //i
   );
-  assign _zz_ap_rst = (! resetn);
   assign io_ap_done = hlsArea_dut_ap_done;
   assign io_ap_idle = hlsArea_dut_ap_idle;
   assign io_ap_ready = hlsArea_dut_ap_ready;
-  assign io_strmIn_ready = hlsArea_dut_strm_in_read;
-  assign io_strmOut_valid = hlsArea_dut_strm_out_write;
-  assign io_strmOut_payload = hlsArea_dut_strm_out_din;
+  assign io_strmIn_ready = hlsArea_dut_strmIn_TREADY;
+  assign io_strmOut_valid = hlsArea_dut_strmOut_TVALID;
+  assign io_strmOut_payload = hlsArea_dut_strmOut_TDATA;
 
 endmodule
 
